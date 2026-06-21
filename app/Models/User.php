@@ -16,7 +16,7 @@ class User extends Authenticatable
         'email',
         'phone',
         'city',
-        'weeks_of_pregnancy',
+        'start_pregnancy_date',
         'is_profile_verified', // <--- AJOUTEZ CECI
         'password',
     ];

@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from pydantic import BaseModel  # <--- AJOUTEZ CETTE LIGNE
+from pydantic import BaseModel
 from typing import List
 import joblib
 import uvicorn
@@ -7,78 +7,61 @@ import os
 
 app = FastAPI()
 
-# Chargement sécurisé du modèle
+# --- Chargement du modèle ---
 base_dir = os.path.dirname(os.path.abspath(__file__))
 model_path = os.path.join(base_dir, 'model_risques.pkl')
 model = joblib.load(model_path)
 
+# --- Fonctions de logique métier ---
+
 def generer_conseil(temp, niveau_risque):
-    # Nettoyage du nom (parfois str(prediction) ajoute des espaces ou majuscules bizarres)
     niveau = niveau_risque.strip().upper()
-    
     if niveau == "ÉLEVÉ":
         if temp >= 40:
-            return "ALERTE EXTRÊME : Risque de déshydratation sévère. Rentrez immédiatement, rafraîchissez vos points de pulsation (poignets/cou) et buvez de l'eau fraîche, pas glacée."
-        return "Risque thermique important. Restez à l'ombre, évitez tout effort physique et portez des vêtements légers en coton."
-    
+            return "ALERTE EXTRÊME : Risque de déshydratation sévère. Rentrez immédiatement."
+        return "Risque thermique important. Restez à l'ombre et évitez tout effort physique."
     elif niveau == "MODÉRÉ":
         return "Température élevée. Buvez 2L d'eau par jour et évitez de sortir entre 12h et 16h."
-    
-    return "Conditions normales. Continuez à bien vous hydrater pour votre bébé."
+    return "Conditions normales. Continuez à bien vous hydrater."
+
+def analyser_previsions_meteo(forecast_list):
+    """Analyse les données météo pour générer des alertes intelligentes."""
+    alertes = []
+    # 1. Détection de pic
+    temps_max = max(forecast_list, key=lambda x: x['temp'])
+    if temps_max['temp'] > 38:
+        alertes.append(f"Pic de chaleur à {temps_max['temp']}°C prévu à {temps_max['heure']}.")
+    # 2. Détection de nuit chaude
+    nuit_temp = next((x['temp'] for x in forecast_list if x['heure'] == "22:00"), 25)
+    if nuit_temp > 28:
+        alertes.append(f"Nuit chaude prévue ({nuit_temp}°C) : préparez votre chambre.")
+    return alertes
 
 def generer_conseil_apres_symptome(symptomes_list):
-    """
-    Retourne un dictionnaire de conseils structuré par symptôme.
-    """
-    # Base de connaissances organisée
     dictionnaire_conseils = {
-        "Maux de tête violents / Vertiges": [
-            "Allongez-vous dans une pièce sombre.",
-            "Hydratez-vous par petites gorgées.",
-            "Prenez votre tension si possible."
-        ],
-        "Contractions douloureuses": [
-            "Prenez un bain chaud pour détendre les muscles.",
-            "Chronométrez la fréquence des contractions.",
-            "Contactez votre sage-femme en cas de régularité."
-        ],
-        "Fatigue extrême ou déshydratation": [
-            "Reposez-vous sans culpabiliser.",
-            "Privilégiez des repas légers et fréquents.",
-            "Buvez régulièrement de l'eau (1.5L à 2L/jour)."
-        ],
-        "Fièvre ou sensation de forte chaleur": [
-            "Rafraîchissez-vous avec un linge humide.",
-            "Portez des vêtements légers en coton.",
-            "Surveillez votre température toutes les 2 heures."
-        ],
-        "Gonflement anormal des pieds/mains": [
-            "Surélevez vos jambes au repos.",
-            "Évitez de rester debout trop longtemps.",
-            "Réduisez l'apport en sel dans votre alimentation."
-        ]
+        "Maux de tête violents / Vertiges": ["Allongez-vous dans une pièce sombre.", "Hydratez-vous."],
+        "Contractions douloureuses": ["Prenez un bain chaud.", "Chronométrez la fréquence."],
+        "Fatigue extrême ou déshydratation": ["Reposez-vous.", "Privilégiez des repas légers."],
+        "Fièvre ou sensation de forte chaleur": ["Rafraîchissez-vous avec un linge humide."],
+        "Gonflement anormal des pieds/mains": ["Surélevez vos jambes."]
     }
+    return {s: dictionnaire_conseils.get(s, ["Reposez-vous et consultez en cas de doute."]) for s in symptomes_list}
 
-    resultats = {}
+# --- Routes API ---
+
+@app.get("/predict_smart")
+async def predict_smart(lat: float, lon: float, semaines: int, hta: int):
+    # Simulation météo (à remplacer par appel API OpenWeatherMap)
+    mock_forecast = [{'heure': '09:00', 'temp': 30}, {'heure': '14:00', 'temp': 41}, {'heure': '22:00', 'temp': 29}]
+    temp_actuelle = mock_forecast[0]['temp']
     
-    for symptome in symptomes_list:
-        # Si le symptôme est connu, on prend ses conseils, sinon un conseil générique
-        resultats[symptome] = dictionnaire_conseils.get(
-            symptome, 
-            ["Surveillez l'évolution et reposez-vous.", "En cas de doute, consultez un spécialiste."]
-        )
-        
-    return resultats
-
-@app.get("/predict")
-async def predict_risk(temp: float, semaines: int, hta: int):
-    # Le modèle attend un tableau avec 3 colonnes : [Temp, Semaines, HTA]
-    prediction = model.predict([[temp, semaines, hta]])[0] 
+    prediction = model.predict([[temp_actuelle, semaines, hta]])[0]
     
     return {
-        "temperature": temp,
+        "temperature": temp_actuelle,
         "niveau_risque": str(prediction),
-        "conseil": generer_conseil(temp, str(prediction))
+        "conseil": generer_conseil(temp_actuelle, str(prediction)),
+        "predictions": analyser_previsions_meteo(mock_forecast)
     }
 
 class AnalyseRequest(BaseModel):
@@ -87,13 +70,7 @@ class AnalyseRequest(BaseModel):
 
 @app.post("/analyser")
 async def analyser(data: AnalyseRequest):
-    # Appel de votre fonction existante
-    conseils = generer_conseil_apres_symptome(data.symptomes)
-    
-    return {
-        "status": "success",
-        "data": conseils
-    }
+    return {"status": "success", "data": generer_conseil_apres_symptome(data.symptomes)}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=5000)

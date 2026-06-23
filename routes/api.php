@@ -1,26 +1,29 @@
 <?php
 
-// routes/api.php
-
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\SymptomeController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\MedicalRecordController;
+use Illuminate\Support\Facades\Route;
 
+// --- ROUTES PUBLIQUES ---
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/register', [AuthController::class, 'register']);
-Route::get('/users', [UserController::class, 'index']);
-Route::post('/users/{id}/toggle', [UserController::class, 'toggleVerification']);
-Route::get('/medical-records/{user_id}', [MedicalRecordController::class, 'show']);
-Route::post('/medical-records/{user_id}', [MedicalRecordController::class, 'store']);
-Route::get('/medical-records/{user_id}/history', [MedicalRecordController::class, 'history']);
-Route::get('/dashboard', [DashboardController::class, 'index']);
 
-// On utilise le middleware 'auth:sanctum'
-// Si le token est absent, il renverra une erreur 401 au lieu d'une redirection
-Route::middleware('auth:sanctum')->get('/dashboard-data', [DashboardController::class, 'index']);
-Route::middleware('auth:sanctum')->post('/test-verify', [App\Http\Controllers\UserController::class, 'toggleVerification']);
-Route::middleware('auth:sanctum')->post('/symptomes', [SymptomeController::class, 'store']);
-
+// --- ROUTES PROTÉGÉES (Nécessitent le Token Bearer) ---
+Route::middleware('auth:sanctum')->group(function () {
+    
+    // Utilisateurs
+    Route::get('/users', [UserController::class, 'index']);
+    Route::post('/users/{id}/toggle', [UserController::class, 'toggleVerification']);
+    
+    // Dossiers Médicaux (Utilisez uniquement celles-ci)
+    Route::get('/medical-records/history', [MedicalRecordController::class, 'getHistory']);
+    Route::post('/medical-records', [MedicalRecordController::class, 'store']);
+    
+    // Dashboard & Autres
+    Route::get('/dashboard-data', [DashboardController::class, 'index']);
+    Route::post('/symptomes', [SymptomeController::class, 'store']);
+    Route::post('/test-verify', [UserController::class, 'toggleVerification']);
+});

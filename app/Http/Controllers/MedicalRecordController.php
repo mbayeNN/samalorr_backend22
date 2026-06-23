@@ -3,38 +3,56 @@
 namespace App\Http\Controllers;
 
 use App\Models\MedicalRecord;
-use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log; // Ajout pour le débogage
 
 class MedicalRecordController extends Controller
 {
-    // Récupérer l'historique complet avec le nom de la patiente
-    public function history($user_id)
+    /**
+     * Récupère l'historique de l'utilisateur connecté via Sanctum.
+     */
+    public function getHistory(Request $request)
     {
-        // On récupère l'utilisateur pour avoir son nom
-        $user = User::findOrFail($user_id);
-        
-        // On récupère tous ses dossiers médicaux
-        $records = MedicalRecord::where('user_id', $user_id)
+        // 1. Récupération forcée de l'ID via le guard sanctum
+        $userId = $request->user('sanctum') ? $request->user('sanctum')->id : null;
+
+        // 2. Log de débogage : vérifiez votre fichier storage/logs/laravel.log
+        Log::info("Tentative de récupération historique. UserID trouvé : " . ($userId ?? 'AUCUN'));
+
+        if (!$userId) {
+            return response()->json(['message' => 'Non authentifié ou token invalide'], 401);
+        }
+
+        // 3. Récupération des données
+        $records = MedicalRecord::where('user_id', $userId)
             ->orderBy('created_at', 'desc')
             ->get();
 
+        Log::info("Nombre de records trouvés pour user $userId : " . $records->count());
+
         return response()->json([
-            'patient_name' => $user->name, // Assurez-vous que le modèle User possède bien 'name'
+            'patient_name' => $request->user('sanctum')->name,
             'history' => $records
         ]);
     }
 
-    // Créer une nouvelle entrée de consultation
-    public function store(Request $request, $user_id)
+    /**
+     * Enregistre une consultation.
+     */
+    public function store(Request $request)
     {
-        $data = $request->all();
-        $data['user_id'] = $user_id;
+        $validatedData = $request->validate([
+            'weight' => 'required|numeric',
+            'blood_pressure' => 'required|string',
+        ]);
 
-        $record = MedicalRecord::create($data);
+        // Utilisation explicite de l'utilisateur Sanctum
+        $validatedData['user_id'] = $request->user('sanctum')->id;
+
+        $record = MedicalRecord::create($validatedData);
 
         return response()->json([
-            'message' => 'Consultation enregistrée avec succès', 
+            'message' => 'Consultation enregistrée', 
             'data' => $record
         ], 201);
     }

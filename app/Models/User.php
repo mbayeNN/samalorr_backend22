@@ -17,7 +17,7 @@ class User extends Authenticatable
         'phone',
         'city',
         'start_pregnancy_date',
-        'is_profile_verified', // <--- AJOUTEZ CECI
+        'is_profile_verified',
         'password',
     ];
 
@@ -26,9 +26,17 @@ class User extends Authenticatable
         'remember_token',
     ];
 
-    // <--- AJOUTEZ CECI pour manipuler facilement le booléen
     protected $casts = [
         'email_verified_at' => 'datetime',
         'is_profile_verified' => 'boolean', 
     ];
+
+    /**
+     * Relation avec les rapports de symptômes
+     * (C'est ce qui manquait pour corriger l'erreur 500)
+     */
+    public function symptomeReports()
+    {
+        return $this->hasMany(SymptomeReport::class);
+    }
 }
